@@ -1,21 +1,32 @@
+#include <ArduinoJson.h>
+#include <SparkTime.h>
+
 #include "SparkFun_Photon_Weather_Shield_Library.h"
 
 double humidity = 0;
 double temperature = 0;
-double pascals = 0;
+double pressure = 0;
 double baroTemp = 0;
 long lastPublish = 0;
-int pingRate = 300000;
+int pingRate = 30000;
+unsigned long currentTime;
+String date;
+String timeStr;
 
 Weather sensor;
+UDP UDPClient;
+SparkTime rtc;
 
 void setup()
 {
     Particle.variable("humidity", humidity);
     Particle.variable("temperature", temperature);
-    Particle.variable("pressurePascals", pascals);
+    Particle.variable("pressurePascals", pressure);
     Particle.variable("baroTemp", baroTemp);
 
+    rtc.begin(&UDPClient, "se.pool.ntp.org");
+    rtc.setTimeZone(0);
+    
     //Initialize the I2C sensors and ping them
     sensor.begin();
 
@@ -46,10 +57,23 @@ void loop()
 
       if(millis() - lastPublish > pingRate)
       {
+    
+        currentTime = rtc.now();
+        date = rtc.yearString(currentTime) + "-" + rtc.monthString(currentTime) + "-" + rtc.dayString(currentTime);
+        timeStr = rtc.hourString(currentTime) + ":" + rtc.minuteString(currentTime) + ":" + rtc.secondString(currentTime);
         
+        const size_t capacity = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(5);
+        DynamicJsonDocument doc(capacity);
+
+        JsonObject kitchen = doc.createNestedObject("kitchen");
+        kitchen["date"] = date;
+        kitchen["time"] = timeStr;
+        kitchen["temperature"] = temperature;
+        kitchen["pressure"] = pressure;
+        kitchen["humidity"] = humidity;
+
         char data[100];
-        sprintf(data, "{\"temperature\":\"%f\", \"humidity\":\"%f\", \"pressure\":\"%f\"}", temperature, humidity, pascals);
-        
+        serializeJson(doc, data);
         Particle.publish("data", data);
         lastPublish = millis();
       }
@@ -70,7 +94,7 @@ void readAllSensors()
   baroTemp = sensor.readBaroTempF();
 
   //Measure Pressure from the MPL3115A2
-  pascals = sensor.readPressure();
+  pressure = sensor.readPressure();
 
   //If in altitude mode, you can get a reading in feet with this line:
   //float altf = sensor.readAltitudeFt();
